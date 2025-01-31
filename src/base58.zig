@@ -289,6 +289,24 @@ test "should encodeAlloc variable slice sizes" {
     }
 }
 
+test "checkAllAllocationFailures" {
+    const S = struct {
+        fn testFailing(allocator: std.mem.Allocator, random: std.Random) !void {
+            const endec = Table.BITCOIN;
+            const original_data = generateRandomBytesArray(random, 1, 256);
+
+            const encoded_data = try endec.encodeAlloc(allocator, original_data.constSlice());
+            defer allocator.free(encoded_data);
+
+            const decoded_data = try endec.decodeAlloc(allocator, encoded_data);
+            defer allocator.free(decoded_data);
+        }
+    };
+
+    var prng = std.Random.DefaultPrng.init(12345);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, S.testFailing, .{prng.random()});
+}
+
 fn generateRandomBytesArray(
     random: std.Random,
     min_length: usize,
