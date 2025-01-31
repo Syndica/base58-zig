@@ -1,5 +1,10 @@
 .{
-    .name = "base58-zig",
-    .version = "0.1.2",
+    .name = "base58",
+    .version = "0.2.0",
     .dependencies = .{},
+    .paths = .{
+        "build.zig.zon",
+        "build.zig",
+        "src",
+    },
 }

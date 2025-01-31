@@ -17,71 +17,26 @@ _base58-zig_ is encoder/decoder library written in Zig.
 
 ## Installation
 
-### Manual
+Declare the library as a dependency in `build.zig.zon` using `zig fetch --save=base58 git+https://github.com/Syndica/base58-zig`,
+optionally specifying the particular commit desired by appending `#<COMMIT HASH>` to the end of the URL, or doing so after it's in
+the build.zig.zon; after this, get the module in your build.zig:
+```diff
+const std = @import("std");
 
-1. Declare Base58-zig as a dependency in `build.zig.zon`:
+pub fn build(b: *std.Build) void {
+   const target = b.standardTargetOptions(.{});
+   const optimize = b.standardOptimizeOption(.{});
 
-   ```diff
-   .{
-       .name = "my-project",
-       .version = "1.0.0",
-       .dependencies = .{
-   +       .@"base58-zig" = .{
-   +           .url = "https://github.com/ultd/base58-zig/archive/<COMMIT>.tar.gz",
-   +       },
-       },
-   }
-   ```
++   const base58_dep = b.dependency("base58", .{
++       .target = target,
++       .optimize = optimize,
++   });
++   const base58_mod = .module("base58-zig");
 
-2. Expose Base58-zig as a module in `build.zig`:
-
-   ```diff
-   const std = @import("std");
-
-   pub fn build(b: *std.Build) void {
-       const target = b.standardTargetOptions(.{});
-       const optimize = b.standardOptimizeOption(.{});
-
-   +   const opts = .{ .target = target, .optimize = optimize };
-   +   const base58_module = b.dependency("base58-zig", opts).module("base58-zig");
-
-       const exe = b.addExecutable(.{
-           .name = "test",
-           .root_source_file = .{ .path = "src/main.zig" },
-           .target = target,
-           .optimize = optimize,
-       });
-   +   exe.addModule("base58-zig", base58_module);
-       exe.install();
-
-       ...
-   }
-   ```
-
-3. Obtain Base58-zig's package hash:
-
-   ```
-   $ zig build
-   my-project/build.zig.zon:6:20: error: url field is missing corresponding hash field
-           .url = "https://github.com/ultd/base58-zig/archive/<COMMIT>.tar.gz",
-                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   note: expected .hash = "<HASH>",
-   ```
-
-4. Update `build.zig.zon` with hash value:
-
-   ```diff
-   .{
-       .name = "my-project",
-       .version = "1.0.0",
-       .dependencies = .{
-           .@"base58-zig" = .{
-               .url = "https://github.com/ultd/base58-zig/archive/<COMMIT>.tar.gz",
-   +           .hash = "<HASH>",
-           },
-       },
-   }
-   ```
+   const exe = b.addExecutable(.{...});
++   exe.addModule("base58", base58_mod);
+}
+```
 
 ### API Reference
 
