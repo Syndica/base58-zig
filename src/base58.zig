@@ -128,15 +128,16 @@ pub const Table = struct {
     /// Asserts `encoded.len >= encodedUpperBound(encoded.len)`.
     pub fn encode(self: Table, encoded: []u8, decoded: []const u8) usize {
         std.debug.assert(encoded.len >= encodedMaxSize(decoded.len));
+
+        const plus_mul_max = std.math.maxInt(u8) + std.math.maxInt(u8) * 256;
+        const PlusMul = std.math.IntFittingRange(0, plus_mul_max);
+        const Carry = std.math.IntFittingRange(0, plus_mul_max / 58);
+
         var index: usize = 0;
         for (decoded) |byte| {
-            const plus_mul_max = std.math.maxInt(u8) + std.math.maxInt(u8) * 256;
-
-            const Carry = std.math.IntFittingRange(0, plus_mul_max / 58);
             var carry: Carry = byte;
 
             for (0..index) |prev_index| {
-                const PlusMul = std.math.IntFittingRange(0, plus_mul_max);
                 const plus_mul = carry + encoded[encoded.len - 1 - prev_index] * @as(PlusMul, 256);
                 encoded[encoded.len - 1 - prev_index] = @intCast(plus_mul % 58);
                 carry = @intCast(plus_mul / 58);
@@ -172,6 +173,12 @@ pub const Table = struct {
     /// Asserts `decoded.len >= decodedUpperBound(encoded.len)`.
     pub fn decode(self: Table, decoded: []u8, encoded: []const u8) DecodeError!usize {
         std.debug.assert(decoded.len >= decodedMaxSize(encoded.len));
+
+        const plus_mul_max = 127 + 255 * 58; // maximum value of `value`, plus the maximum value of `dest[prev_index]` times 58
+        const PlusMul = std.math.IntFittingRange(0, plus_mul_max);
+        const plus_mul_shr8_max = plus_mul_max >> 8; // maximum value of shifting `plus_mul` right by 8 bits
+        comptime std.debug.assert(plus_mul_shr8_max <= std.math.maxInt(u8));
+
         var index: usize = 0;
         for (encoded) |char| {
             if (char > 127) return error.NonAsciiCharacter;
@@ -179,14 +186,8 @@ pub const Table = struct {
             var value: u8 = self.decode_table[char];
             if (value == 0xFF) return error.InvalidCharacter;
             for (0..index) |prev_index| {
-                const plus_mul_max = 127 + 255 * 58; // maximum value of `value`, plus the maximum value of `dest[prev_index]` times 58
-                const PlusMul = std.math.IntFittingRange(0, plus_mul_max);
-
                 const plus_mul = value + @as(PlusMul, decoded[decoded.len - 1 - prev_index]) * 58;
                 decoded[decoded.len - 1 - prev_index] = @truncate(plus_mul);
-
-                const plus_mul_shr8_max = plus_mul_max >> 8; // maximum value of shifting `plus_mul` right by 8 bits
-                comptime std.debug.assert(plus_mul_shr8_max <= std.math.maxInt(u8));
                 value = @intCast(plus_mul >> 8);
             }
 
