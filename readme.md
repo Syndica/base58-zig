@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
 +       .target = target,
 +       .optimize = optimize,
 +   });
-+   const base58_mod = .module("base58-zig");
++   const base58_mod = base58_dep.module("base58");
 
    const exe = b.addExecutable(.{...});
 +   exe.addModule("base58", base58_mod);
