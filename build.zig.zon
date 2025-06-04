@@ -1,7 +1,8 @@
 .{
-    .name = "base58",
+    .name = .base58, 
     .version = "0.2.0",
     .dependencies = .{},
+    .fingerprint = 0xed092d9e60226dc1,
     .paths = .{
         "build.zig.zon",
         "build.zig",
