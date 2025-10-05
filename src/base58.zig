@@ -1,15 +1,17 @@
 const std = @import("std");
 
-const LOG2_58_FLOOR: comptime_int = std.math.log2_int(u6, 58);
-
-/// encoded_len <= decoded_len * 8 / log2(58)
+/// Return maximum encoded length based on the decoded length, approximately.
+/// This is based on the base conversion ratio `log2(256) / log2(58)` being roughly equal to `1.37`.
 pub fn encodedMaxSize(decoded_len: usize) usize {
-    return @divFloor(decoded_len * 8 + 1, LOG2_58_FLOOR) + 1;
+    if (decoded_len == 0) return 0;
+    return decoded_len + (decoded_len * 37) / 100 + 1;
 }
 
-/// decoded_len <= encoded_len * log2(58) / 8
+/// Return maximum encoded length based on the decoded length, approximately.
+/// This is based on the base conversion ratio `log2(58) / log2(256)` being roughly equal to `0.74`.
 pub fn decodedMaxSize(encoded_len: usize) usize {
-    return @divFloor(encoded_len * LOG2_58_FLOOR + 1, 8) + 1;
+    if (encoded_len == 0) return 0;
+    return (encoded_len * 74) / 100 + 1;
 }
 
 pub const Table = struct {
