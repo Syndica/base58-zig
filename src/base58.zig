@@ -45,89 +45,7 @@ pub const Table = struct {
         };
     }
 
-    // -- alloc --
-
-    pub fn encodeAlloc(
-        self: Table,
-        allocator: std.mem.Allocator,
-        decoded: []const u8,
-    ) std.mem.Allocator.Error![]u8 {
-        var encoded = try allocator.alloc(u8, encodedMaxSize(decoded.len));
-        errdefer allocator.free(encoded);
-        const encoded_len = self.encode(encoded, decoded);
-        if (encoded_len < encoded.len) {
-            encoded = try allocator.realloc(encoded, encoded_len);
-        }
-        std.debug.assert(encoded_len == encoded.len);
-        return encoded;
-    }
-
-    pub fn decodeAlloc(
-        self: Table,
-        allocator: std.mem.Allocator,
-        encoded: []const u8,
-    ) (DecodeError || std.mem.Allocator.Error)![]u8 {
-        var decoded = try allocator.alloc(u8, decodedMaxSize(encoded.len) + 64);
-        errdefer allocator.free(decoded);
-        const decoded_len = try self.decode(decoded, encoded);
-        if (decoded_len < decoded.len) {
-            decoded = try allocator.realloc(decoded, decoded_len);
-        }
-        std.debug.assert(decoded_len == decoded.len);
-        return decoded;
-    }
-
-    // -- bounded --
-
-    pub fn encodeBounded(
-        self: Table,
-        comptime decoded_max_len: usize,
-        decoded: std.BoundedArray(u8, decoded_max_len),
-    ) std.BoundedArray(u8, encodedMaxSize(decoded_max_len)) {
-        var encoded: std.BoundedArray(u8, encodedMaxSize(decoded_max_len)) = .{};
-        const encoded_len = self.encode(encoded.unusedCapacitySlice(), decoded.constSlice());
-        encoded.len += @intCast(encoded_len);
-        return encoded;
-    }
-
-    pub fn decodeBounded(
-        self: Table,
-        comptime encoded_max_len: usize,
-        encoded: std.BoundedArray(u8, encoded_max_len),
-    ) DecodeError!std.BoundedArray(u8, decodedMaxSize(encoded_max_len)) {
-        var decoded: std.BoundedArray(u8, decodedMaxSize(encoded_max_len)) = .{};
-        const decoded_len = try self.decode(decoded.unusedCapacitySlice(), encoded.constSlice());
-        decoded.len += @intCast(decoded_len);
-        return decoded;
-    }
-
-    // -- array --
-
-    pub fn encodeArray(
-        self: Table,
-        comptime decoded_len: usize,
-        decoded: [decoded_len]u8,
-    ) std.BoundedArray(u8, encodedMaxSize(decoded_len)) {
-        var encoded: std.BoundedArray(u8, encodedMaxSize(decoded_len)) = .{};
-        const encoded_len = self.encode(encoded.unusedCapacitySlice(), &decoded);
-        encoded.len += @intCast(encoded_len);
-        return encoded;
-    }
-
-    pub fn decodeArray(
-        self: Table,
-        comptime encoded_len: usize,
-        encoded: [encoded_len]u8,
-    ) std.BoundedArray(u8, decodedMaxSize(encoded_len)) {
-        var decoded: std.BoundedArray(u8, decodedMaxSize(encoded_len)) = .{};
-        const decoded_len = self.decode(decoded.unusedCapacitySlice(), &encoded);
-        decoded.len += @intCast(decoded_len);
-        return decoded;
-    }
-
-    // -- basic encode/decode --
-
-    /// Asserts `encoded.len >= encodedUpperBound(encoded.len)`.
+    /// Asserts `encoded.len >= encodedMaxSize(encoded.len)`.
     pub fn encode(self: Table, encoded: []u8, decoded: []const u8) usize {
         std.debug.assert(encoded.len >= encodedMaxSize(decoded.len));
 
@@ -162,8 +80,8 @@ pub const Table = struct {
             const byte = &encoded[encoded.len - 1 - prev_index];
             byte.* = self.alphabet[byte.*];
         }
-
         std.mem.copyForwards(u8, encoded[0..index], encoded[encoded.len - index ..][0..index]);
+
         return index;
     }
 
@@ -172,7 +90,7 @@ pub const Table = struct {
         InvalidCharacter,
     };
 
-    /// Asserts `decoded.len >= decodedUpperBound(encoded.len)`.
+    /// Asserts `decoded.len >= decodedMaxSize(encoded.len)`.
     pub fn decode(self: Table, decoded: []u8, encoded: []const u8) DecodeError!usize {
         std.debug.assert(decoded.len >= decodedMaxSize(encoded.len));
 
@@ -207,121 +125,94 @@ pub const Table = struct {
             decoded[decoded.len - 1 - index] = 0;
             index += 1;
         }
-
         std.mem.copyForwards(u8, decoded[0..index], decoded[decoded.len - index ..][0..index]);
+
         return index;
     }
 };
 
-test "should encodeAlloc value correctly" {
-    const endec = Table.BITCOIN;
+fn testRoundTripFromDecoded(
+    table: Table,
+    decoded_input: []const u8,
+    maybe_expect_encoded: ?[]const u8,
+) !void {
+    const gpa = std.testing.allocator;
 
-    const encoded_data = try endec.encodeAlloc(std.testing.allocator, &.{
-        57,  54,  18,  6,   106, 202, 13,  245, 224, 235, 33,  252, 254,
-        251, 161, 17,  248, 108, 25,  214, 169, 154, 91,  101, 17,  121,
-        235, 82,  175, 197, 144, 145,
-    });
-    defer std.testing.allocator.free(encoded_data);
+    const encoded_buffer = try gpa.alloc(u8, encodedMaxSize(decoded_input.len));
+    defer gpa.free(encoded_buffer);
+    const encoded_data = encoded_buffer[0..table.encode(encoded_buffer, decoded_input)];
 
-    const expected_data = "4rL4RCWHz3iNCdCaveD8KcHfV9YWGsqSHFPo7X2zBNwa";
-    try std.testing.expectEqualStrings(expected_data, encoded_data);
+    if (maybe_expect_encoded) |expect_encoded| {
+        try std.testing.expectEqualStrings(expect_encoded, encoded_data);
+    }
+
+    const decoded_buffer = try gpa.alloc(u8, decodedMaxSize(encoded_data.len));
+    defer gpa.free(decoded_buffer);
+    const decoded_data = decoded_buffer[0..try table.decode(decoded_buffer, encoded_data)];
+
+    try std.testing.expectEqualSlices(u8, decoded_input, decoded_data);
 }
 
-test "should decodeAlloc value correctly" {
-    const endec = Table.BITCOIN;
+fn testRoundTripFromEncoded(
+    table: Table,
+    encoded_input: []const u8,
+    maybe_expect_decoded: ?[]const u8,
+) !void {
+    const gpa = std.testing.allocator;
 
-    const decoded_data = try endec.decodeAlloc(
-        std.testing.allocator,
-        "4rL4RCWHz3iNCdCaveD8KcHfV9YWGsqSHFPo7X2zBNwa",
-    );
-    defer std.testing.allocator.free(decoded_data);
+    const decoded_buffer = try gpa.alloc(u8, decodedMaxSize(encoded_input.len));
+    defer gpa.free(decoded_buffer);
+    const decoded_data = decoded_buffer[0..try table.decode(decoded_buffer, encoded_input)];
 
-    const expected_data: [32]u8 = .{
+    if (maybe_expect_decoded) |expect_decoded| {
+        try std.testing.expectEqualStrings(expect_decoded, decoded_data);
+    }
+
+    const encoded_buffer = try gpa.alloc(u8, encodedMaxSize(decoded_data.len));
+    defer gpa.free(encoded_buffer);
+    const encoded_data = encoded_buffer[0..table.encode(encoded_buffer, decoded_data)];
+
+    try std.testing.expectEqualSlices(u8, encoded_input, encoded_data);
+}
+
+test "Hello, World" {
+    try testRoundTripFromDecoded(.BITCOIN, "Hello, World", null);
+}
+
+test "encode/decode values correctly" {
+    const encoded_4rL4R = "4rL4RCWHz3iNCdCaveD8KcHfV9YWGsqSHFPo7X2zBNwa";
+    const decoded_4rL4R: [32]u8 = .{
         57,  54,  18,  6,   106, 202, 13,  245, 224, 235, 33,  252, 254,
         251, 161, 17,  248, 108, 25,  214, 169, 154, 91,  101, 17,  121,
         235, 82,  175, 197, 144, 145,
     };
-    try std.testing.expectEqualSlices(u8, &expected_data, decoded_data);
+    try testRoundTripFromDecoded(.BITCOIN, &decoded_4rL4R, encoded_4rL4R);
+    try testRoundTripFromEncoded(.BITCOIN, encoded_4rL4R, &decoded_4rL4R);
 }
 
-test "bytes encodeAlloc/decodeAlloc correctly" {
-    const endec = Table.BITCOIN;
-
-    const original_data: [12]u8 = "Hello, World".*;
-
-    const encoded_data = try endec.encodeAlloc(std.testing.allocator, &original_data);
-    defer std.testing.allocator.free(encoded_data);
-
-    const decoded_data = try endec.decodeAlloc(std.testing.allocator, encoded_data);
-    defer std.testing.allocator.free(decoded_data);
-
-    try std.testing.expectEqualStrings(&original_data, decoded_data);
+test "handle leading 0s slice" {
+    try testRoundTripFromDecoded(.BITCOIN, &.{ 0, 0, 13, 4, 5, 6, 3, 23, 64, 75 }, null);
 }
 
-test "encodeAlloc leading 0s slice properly" {
-    const endec = Table.BITCOIN;
-
-    const original_data: [10]u8 = .{ 0, 0, 13, 4, 5, 6, 3, 23, 64, 75 };
-
-    const encoded_data = try endec.encodeAlloc(std.testing.allocator, &original_data);
-    defer std.testing.allocator.free(encoded_data);
-
-    const decoded_data = try endec.decodeAlloc(std.testing.allocator, encoded_data);
-    defer std.testing.allocator.free(decoded_data);
-
-    try std.testing.expectEqualSlices(u8, &original_data, decoded_data);
+test "handle single byte slice" {
+    try testRoundTripFromDecoded(.BITCOIN, &.{255}, null);
 }
 
-test "should encodeAlloc single byte slice" {
-    const endec = Table.BITCOIN;
-    const original_data: [1]u8 = .{255};
-    const encoded_data = endec.encodeArray(1, original_data);
-    const decoded_data = try endec.decodeBounded(encodedMaxSize(1), encoded_data);
-    try std.testing.expectEqualSlices(u8, &original_data, decoded_data.constSlice());
-}
-
-test "should encodeAlloc variable slice sizes" {
-    const endec = Table.BITCOIN;
-
-    var prng = std.Random.DefaultPrng.init(12345);
-    for (0..2000) |_| {
-        const original_data = generateRandomBytesArray(prng.random(), 1, 256);
-        const encoded_data = endec.encodeBounded(256, original_data);
-        const decoded_data = try endec.decodeBounded(encodedMaxSize(256), encoded_data);
-        try std.testing.expectEqualSlices(u8, original_data.constSlice(), decoded_data.constSlice());
+test "various slice sizes" {
+    var prng_state: std.Random.DefaultPrng = .init(13773);
+    const prng = prng_state.random();
+    var buffer: [500 * 133]u8 = undefined;
+    for (0..500) |i| {
+        const original_data = buffer[0..i];
+        prng.bytes(original_data);
+        try testRoundTripFromDecoded(.BITCOIN, original_data, null);
     }
 }
 
-test "checkAllAllocationFailures" {
-    const S = struct {
-        fn testFailing(allocator: std.mem.Allocator, random: std.Random) !void {
-            const endec = Table.BITCOIN;
-            const original_data = generateRandomBytesArray(random, 1, 256);
-
-            const encoded_data = try endec.encodeAlloc(allocator, original_data.constSlice());
-            defer allocator.free(encoded_data);
-
-            const decoded_data = try endec.decodeAlloc(allocator, encoded_data);
-            defer allocator.free(decoded_data);
-        }
-    };
-
-    var prng = std.Random.DefaultPrng.init(12345);
-    try std.testing.checkAllAllocationFailures(std.testing.allocator, S.testFailing, .{prng.random()});
-}
-
-fn generateRandomBytesArray(
-    random: std.Random,
-    min_length: usize,
-    comptime max_length: usize,
-) std.BoundedArray(u8, max_length) {
-    std.debug.assert(min_length <= max_length);
-    var result: std.BoundedArray(u8, max_length) = .{};
-    result.len = random.intRangeAtMost(
-        std.math.IntFittingRange(0, max_length),
-        @intCast(min_length),
-        max_length,
-    );
-    random.bytes(result.slice());
-    return result;
+test "big slice" {
+    var prng_state: std.Random.DefaultPrng = .init(24830);
+    const prng = prng_state.random();
+    var data: [10_000]u8 = undefined;
+    prng.bytes(&data);
+    try testRoundTripFromDecoded(.BITCOIN, &data, null);
 }
