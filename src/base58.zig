@@ -88,6 +88,7 @@ pub const Table = struct {
     pub const DecodeError = error{
         NonAsciiCharacter,
         InvalidCharacter,
+        NoSpaceLeft,
     };
 
     /// Asserts `decoded.len >= decodedMaxSize(encoded.len)`.
@@ -122,6 +123,7 @@ pub const Table = struct {
         const zero = self.alphabet[0];
         for (encoded) |c| {
             if (c != zero) break;
+            if (index >= decoded.len) return error.NoSpaceLeft;
             decoded[decoded.len - 1 - index] = 0;
             index += 1;
         }
@@ -215,4 +217,10 @@ test "big slice" {
     var data: [10_000]u8 = undefined;
     prng.bytes(&data);
     try testRoundTripFromDecoded(.BITCOIN, &data, null);
+}
+
+test "decode leading zeros exceeding buffer" {
+    const encoded_1111 = "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+    const res = testRoundTripFromEncoded(.BITCOIN, encoded_1111, null);
+    try std.testing.expectError(error.NoSpaceLeft, res);
 }
