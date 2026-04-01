@@ -91,9 +91,10 @@ pub const Table = struct {
         NoSpaceLeft,
     };
 
-    /// Asserts `decoded.len >= decodedMaxSize(encoded.len)`.
+    /// Asserts `decoded.len >= decodedMaxSize(encoded.len)` if comptime or returns an error if runtime and invalid.
     pub fn decode(self: Table, decoded: []u8, encoded: []const u8) DecodeError!usize {
-        std.debug.assert(decoded.len >= decodedMaxSize(encoded.len));
+        const is_valid = decoded.len >= decodedMaxSize(encoded.len);
+        if (@inComptime()) std.debug.assert(is_valid) else if (!is_valid) return error.NoSpaceLeft;
 
         const plus_mul_max = 127 + 255 * 58; // maximum value of `value`, plus the maximum value of `dest[prev_index]` times 58
         const PlusMul = std.math.IntFittingRange(0, plus_mul_max);
